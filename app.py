@@ -4,6 +4,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import requests
+import base64
+from werkzeug.utils import secure_filename
 
 # Load environment variables
 load_dotenv()
@@ -166,6 +168,100 @@ def get_itinerary():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ----------------------
+# IMAGE ANALYSIS (OpenAI Vision)
+# ----------------------
+@app.route('/api/analyze-image', methods=['POST'])
+def analyze_image():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
+        
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+        
+    if not file.content_type.startswith('image/'):
+        return jsonify({"error": "File must be an image"}), 400
+
+    try:
+        # Read and encode the image
+        image_data = file.read()
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+        
+        # Create the prompt for image analysis
+        prompt = """Analyze this travel destination image and provide the following details:
+        1. The name of the place/landmark
+        2. The city and country where it's located
+        3. A brief description of its historical and cultural significance
+        4. The best time to visit
+        5. Top things to do in the area
+        
+        Format the response as a JSON object with the following keys:
+        place_name, city, country, description, best_time, things_to_do"""
+
+        # Call OpenAI Vision API
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000
+        )
+
+        # Parse the response
+        result = response.choices[0].message.content
+        
+        # Clean and validate the response
+        try:
+            # Try to extract JSON from the response text
+            # Look for JSON-like structure in the text
+            import json
+            import re
+            
+            # Try to find a JSON object in the text
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                result = json_match.group()
+            
+            data = json.loads(result)
+            required_keys = ['place_name', 'city', 'country', 'description', 'best_time', 'things_to_do']
+            
+            # Ensure all required keys exist
+            for key in required_keys:
+                if key not in data:
+                    data[key] = "Information not available"
+                    
+            return jsonify(data)
+            
+        except (json.JSONDecodeError, AttributeError) as e:
+            print("⚠️ JSON PARSING ERROR:", str(e))
+            print("Raw response:", result)
+            # Fallback if the response is not valid JSON
+            return jsonify({
+                "place_name": "Could not determine",
+                "city": "Unknown",
+                "country": "Unknown",
+                "description": "Could not parse the response properly. Please try again.",
+                "best_time": "Information not available",
+                "things_to_do": "Information not available"
+            })
+
+    except Exception as e:
+        print("⚠️ IMAGE ANALYSIS ERROR:", str(e))
+        return jsonify({"error": "Failed to analyze image"}), 500
 
 
 # ----------------------
