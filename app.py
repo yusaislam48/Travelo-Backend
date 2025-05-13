@@ -265,6 +265,55 @@ def analyze_image():
 
 
 # ----------------------
+# CHATBOT (ChatGPT)
+# ----------------------
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    data = request.get_json()
+    user_name = data.get("user_name", "")
+    message = data.get("message", "")
+
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+
+    try:
+        # Create a personality-rich prompt for the chatbot
+        prompt = f"""You are Travelo, a friendly and enthusiastic AI travel assistant chatting with {user_name}. 
+        You have a fun, casual personality and love using emojis. You're knowledgeable about travel but present information 
+        in an engaging way. You should act like a friend who's excited about travel, not just an information source.
+        
+        Keep responses concise (max 2-3 sentences) and conversational. Use {user_name}'s name occasionally to make it personal.
+        
+        Previous conversation context: {message}
+        
+        Remember to:
+        1. Be friendly and enthusiastic
+        2. Use emojis naturally
+        3. Keep it personal by using their name
+        4. Share fun facts occasionally
+        5. Ask follow-up questions to keep the conversation going
+        6. Make travel-related jokes sometimes
+        
+        Respond to: {message}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are Travelo, a friendly AI travel assistant with a fun personality."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=150
+        )
+
+        return jsonify({"response": response.choices[0].message.content})
+
+    except Exception as e:
+        print("⚠️ CHAT ERROR:", str(e))
+        return jsonify({"error": "Failed to generate response"}), 500
+
+
+# ----------------------
 # MAIN
 # ----------------------
 if __name__ == '__main__':
